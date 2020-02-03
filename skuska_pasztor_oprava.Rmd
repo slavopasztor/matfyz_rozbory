@@ -1,0 +1,227 @@
+---
+title: "Skúška - Slavomír Pásztor"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Pre vizualizáciu a analýzu som si zvolil známy dataset anscombe, ktorý je pomenovaný po anglickom štatistikovi Francis J. Anscombovi. 
+
+V roku 1973 publikoval článok s názvom "Graphs in Statistical Analysis", v ktorom odprezentoval dôležitosť vizualizácie dát.
+
+Vytvoril štyri skupiny dát (preto sa volá tento dataset "Anscombe's Quartet"), v ktoré mali rovnaké alebo veľmi podobné štatistické vlastnosti, no ich grafy boli výrazne odlišné. Tým potvrdil dôležitosť vizualizácie dát, ktorý bola do tej doby považovaná za menejcennú a dôraz sa kládol na exaktnú číselnú analýzu.
+
+<mark><b>
+Tu som vám trocha upravil syntax markdownu, aby ste v prvých odstavcoch nemali tie čudne veľké písmená. Tie vám vznikajú,
+keď dáte textový blok medzi tri pomlčky - prvý odstavec sa potom identifikuje ako názov časti a vysádza sa veľkými písmenami. 
+Bohužiaľ to máte všade. 
+</b></mark>
+
+```{r}
+knitr::kable(anscombe)
+```
+
+```{r}
+library(tidyverse)
+library(broom) # Toto si prosím doinštalujte. 
+```
+
+```{r}
+
+anscombe.1 <- data.frame(x = anscombe[["x1"]], y = anscombe[["y1"]], Set = "Anscombe Set 1")
+anscombe.2 <- data.frame(x = anscombe[["x2"]], y = anscombe[["y2"]], Set = "Anscombe Set 2")
+anscombe.3 <- data.frame(x = anscombe[["x3"]], y = anscombe[["y3"]], Set = "Anscombe Set 3")
+anscombe.4 <- data.frame(x = anscombe[["x4"]], y = anscombe[["y4"]], Set = "Anscombe Set 4")
+
+anscombe.data <- rbind(anscombe.1, anscombe.2, anscombe.3, anscombe.4)
+aggregate(cbind(x, y) ~ Set, anscombe.data, mean)
+
+```
+
+<mark><b>
+Nie je dobrý nápad vyrábať zbytočne zložité textové hodnoty faktorov. Teda "Anscombe Set 1" bude 1 a hotovo, ak sa stĺpec volá Set a data "anscombe.data", potom nemôže byť problém. 
+</b></mark>
+
+Vypočítali sme aritmetický priemer.
+Následne vypočítame štandardnú odchýlku (SD)
+
+``` {r}
+aggregate(cbind(x,y)~Set,anscombe.data,sd)
+```
+
+<mark><b>
+  Viete, tu trocha idete proti bežnému uvažovaniu - samozrejme môžeme dáta rozdeliť na 4 kusy a potom každý krok štyrikrát zopakovať. Lenže to nebude fungovať, ak budete mať 10000 setov dát alebo budete počítať veľa parametrov (pretože každú opravu musíte štyrikrát opakovať), takže to nie je dobrá programátorská prax. 
+  Ukážem vám, ako to urobiť inak. Rozdiel bude v tom, že vynaložíme trocha viac úsilia na to, aby sme si správne usporiadali dáta. Za odmenu budeme potom používať samé učebnicové postupy a všetko bude fungovať automaticky pre všetky sety dát. 
+</b></mark>
+
+```{r}
+#library(plyr) Toto som vám odstránil. 
+               # 1. plyr musíte volať _pred_ dplyr, inak sa nebudete stíhať diviť, čo všetko vám nebude fungovať. 
+               # 2. môžete rovno použiť funkciu cor cez dplyr.
+               # To, čo robíte, je ale inak úplne správny a legálny spôsob.
+
+correlation <- function(data) {
+  
+  x <- data.frame(r = cor(data$x, data$y))
+  return(x)
+  
+}
+
+#ddply(.data = anscombe.data, .variables = "Set", .fun = correlation)
+
+```
+
+Ako môžeme vidieť, tak korelácia medzi hodnotami x a y pre všetky štyri data sety je veľmi podobná, líšia sa až od štvrtého desatinného miesta, čo môžeme považovať za zanedbateľné.
+
+<mark><b>
+  Začíname tým, že popracujeme na utriedení dát. Namiesto funkcií `gather` a `spread`, o ktorých sme sa učili, použijeme nové funkcie `pivot_long` a `pivot_wide`, ktoré majú trocha zrozumiteľnejšie a univerzálnejšie správanie. To, čo chceme, je mať tabuľku s troma stĺpcami `x`, `y` a `set`.
+</b></mark>
+
+```{r}
+anscombe %>%
+  rowid_to_column("rowid") %>% # pridáme čísla riadkov
+  pivot_longer(                # toto je nová verzia funkcie gather
+    -rowid,                    # spájame hodnoty x a y do jediného stĺpca 
+    names_to = "what",         # a what označuje, o akú hodnotu sa jedná
+    values_to = "value"
+  ) %>%                        
+  separate(                    # what rozdelíme na x-alebo-y a číslo setu
+    what, 
+    into = c("x_or_y", "anscombe.set"), 
+    sep = 1) %>%
+  mutate(
+    anscombe.set = as.integer(anscombe.set)
+  ) %>%
+  pivot_wider(                 # roztriedime x a y 
+    names_from = x_or_y,
+    values_from = value
+  ) %>% 
+  select(-rowid) %>%           # zahodíme čísla riadkov a utriedime podľa x
+  arrange(anscombe.set, x) -> tidy_anscombe
+tidy_anscombe
+```
+<mark><b>
+A teraz môžeme všetko robiť ľahko a systematicky. Napríklad jedno volanie `group_by`/`summarize` nám stačí na vytvorenie prehľadnej tabuľky s prvou časťou štatistík, čo je odporúčaný učebnicový postup.
+</b></mark>
+
+```{r}
+tidy_anscombe %>%
+  group_by(anscombe.set) %>%
+  summarize(
+    n = n(),
+    mean.x = mean(x),
+    sigma.x = sd(x),
+    mean.y = mean(y), 
+    sigma.y = sd(y),
+    cor.xy = cor(x,y)
+  ) 
+```
+
+<mark><b>
+  S lineárnymi regresiami to je trocha zložitejšie, pretože každá vyprodukuje veľa čísel, ktoré musíme nejako usporiadať, takže pre dosiahnutie peknej tabuľky môže byť treba aj nejaká "ručná" práca. Ja ukážem úplne základnú učebnicovú možnosť, a to je použiť `group_by` v kombinácii s `group_map` alebo `group_modify` pre aplikovanie lineárnej regresie na jednotlivé datasety. Na riešenie problému s väčším počtom výstupných parametrov použijeme funkciu `tidy` z balíka `broom`, ktorá je univerzálnym konvertorom výsledkov funkcií do tabuľkového formátu. V našom prípade chceme dataframe z výsledkov `lm`, a to je presne to čo aj dostaneme.   
+</b></mark>
+
+```{r}
+tidy_anscombe %>%
+  group_by(anscombe.set) %>%
+  group_modify(~broom::tidy(lm(y ~ x, data = .x)))
+```
+<mark><b>
+  Toto nie je ideálne, pretože máme dva druhy riadkov - "x" a "intercept", ale ak chceme iba ukázať, že hodnoty sú rovnaké, to bohato stačí. Určite to je lepšie, ako analyzovať výpisy "summary" pre jednotlivé datasety.
+</b></mark>
+
+Budeme pokračovať ďalej, vytvorením modelu lineárnej regresie pre všetky štyri prípady.
+
+```{r}
+model1 <- lm(y~x, subset(anscombe.data, Set == "Anscombe Set 1"))
+model2 <- lm(y~x, subset(anscombe.data, Set == "Anscombe Set 2"))
+model3 <- lm(y~x, subset(anscombe.data, Set == "Anscombe Set 3"))
+model4 <- lm(y~x, subset(anscombe.data, Set == "Anscombe Set 4"))
+```
+
+Funkcia summary vykoná jednoduchú analýzu dát.
+
+```{r}
+summary(model1)
+```
+
+```{r}
+summary(model2)
+```
+
+```{r}
+summary(model3)
+```
+
+```{r}
+summary(model4)
+```
+
+```{r}
+gg <- ggplot(anscombe.data, aes(x=x,y=y))
+gg <- gg + geom_point(color = "blue")
+gg <- gg + facet_wrap(~Set, ncol = 2)
+gg <- gg + geom_smooth (formula = y ~ x, method = "lm", se = FALSE, data = anscombe.data)
+gg
+```
+
+AKo môžeme vidieť, tak __dataset1__ predstavuje veľmi dobrý lineárny model. O ostatných sa to však tvrdiť nedá:
+
+__dataset2__ nemá lineárnu koreláciu
+
+<mark><b>
+  Pravdaže má lineárnu koreláciu. Ale je to nelineárna funkcia.
+</b></mark>
+
+__dataset3__ má síce lineárnu koreláciu, ale    je posunutá outlierom. Najvhodnejšie        bolo, keby sme si všimli outlier ešte       pred analýzou a odstránili ho z datasetu    a následne urobili lineárnu regresiu.
+
+__dataset4__ nie je fitovaný žiadnym lineárnym modelom avšak outlier vytvorí grafický predpoklad pre lineárnu regresiu
+
+Pri analyzovaní dát je dôležité položiť si otázku, čo znamená *outlier*. Môžeme ho zadefinovať ako hodnotu, ktorá posúva regresiu od priemeru.
+
+```{r}
+par(mfrow = c(2, 2))
+plot(model1, main = "Model 1")
+```
+
+```{r}
+ggplot(data = model1, aes(x = x, y = y)) + geom_point() + geom_smooth(method = "auto", fullrange = T)
+```
+
+```{r}
+plot(model2, main = "Model 2")
+```
+
+```{r}
+ggplot(data = model2, aes(x = x, y = y)) + geom_point() + geom_smooth(method = "auto", fullrange = T)
+```
+
+```{r}
+plot(model3, main = "Model 3")
+```
+
+```{r}
+ggplot(data = model3, aes(x = x, y = y)) + geom_point() + geom_smooth(method = "auto", fullrange = T)
+```
+
+```{r}
+plot(model4, main = "Model 4")
+```
+
+```{r}
+ggplot(data = model4, aes(x = x, y = y)) + geom_point() + stat_smooth(method = "glm",formula = y ~ log10(x), fullrange = T)
+```
+
+Pre hodnoty __model4__ sme použili funkciu __stat_smooth__ namiesto funkcie __geom_smooth__, ktorú sme používali v predchádzajúcich výpočtoch, pretože sme v __model4__ mali neštandardnú geometriu, na čo sa práve využíva nami použitá funkcia.
+
+<mark><b>
+  Zakončím demonštráciou kreslenia po skupinách pomocou dplyr. Funkcia `group_walk` sa používa pre vedľajší efekt a vracia pôvodnú tabuľku (mohli by sme potlačiť jej zobrazenie)
+</b></mark>
+
+```{r}
+par(mfrow = c(2,2))
+tidy_anscombe %>%
+  group_by(anscombe.set) %>%
+  group_walk(~ plot(lm(y~x, data = .x)))
+```
